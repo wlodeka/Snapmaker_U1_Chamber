@@ -7,7 +7,7 @@ This is a functional checklist, not a purchase-ready or electrically validated B
 | Controller | ESP32-S3 Zero Waveshare 4 MB flash | 1 | Exact board/revision |
 | Optoisolator | PC817 | 2 | 4pin |
 | Temperature sensor | NTC 100 kOhm | 1 |tolerance 1% |
-| Divider resistor | 100 kOhm | 1 | 0,125W |
+| Divider resistor | 100 kOhm | 1 | 0,125W /tolerance 1% |
 | Divider resistor | 300 Om | 7 | 0,125W |
 | Heater switch/driver | Active-HIGH GPIO5 command | 2 |Isolation, ratings, schematic |
 | Local fan driver | Active-HIGH GPIO6 command | 2 | Fan voltage/current and driver |

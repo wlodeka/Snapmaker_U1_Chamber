@@ -2,7 +2,7 @@
 
 This is a functional checklist, not a purchase-ready or electrically validated BOM. Add exact part numbers, quantities, ratings, supplier links and the final circuit after checking the owner's working assembly.
 
-| Function | Specification known from firmware | quantity | comments |
+| Function | Specification known from firmware | pc. | comments |
 | --- | --- | --- | --- |
 | Controller | ESP32-S3 Zero Waveshare 4 MB flash | 1 | Exact board/revision |
 | Optoisolator | PC817 | 2 | 4pin |

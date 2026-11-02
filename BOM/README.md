@@ -4,9 +4,10 @@ This is a functional checklist, not a purchase-ready or electrically validated B
 
 | Function | Specification known from firmware | To be supplied by owner |
 | --- | --- | --- |
-| Controller | ESP32-S3; review build targets 4 MB flash | Exact board/revision |
-| Temperature sensor | NTC 100 kOhm, B3950 | Part, tolerance, mounting |
-| Divider resistor | 100 kOhm | Tolerance and circuit details |
+| Controller | ESP32-S3 Zero Waveshare 4 MB flash | Exact board/revision |
+| Temperature sensor | NTC 100 kOhm | Part, tolerance 1% |
+| Divider resistor | 100 kOhm | 0,125W |
+| Divider resistor | 300 Om | 0,125W |
 | Heater switch/driver | Active-HIGH GPIO5 command | Isolation, ratings, schematic |
 | Local fan driver | Active-HIGH GPIO6 command | Fan voltage/current and driver |
 | Buzzer driver | GPIO8 switched output | Type and electrical interface |

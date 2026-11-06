@@ -2,7 +2,8 @@
 
 ESP32-S3 chamber heater controller with a browser interface, local NTC temperature control, Snapmaker U1 / Moonraker integration, automatic TopCover detection and password-protected Wi-Fi firmware updates.
 
-**Private owner-review edition.** The firmware is the owner's last confirmed working version from 17 October 2026. This repository reorganizes that version for publication; it does not introduce a new control algorithm. Hardware schematics, photographs and the final BOM will be added by the owner. No open-source license has been selected yet.
+<img width="3833" height="3472" alt="c4" src="https://github.com/user-attachments/assets/01509b29-1669-4586-98a3-15f4f788ae5d" />
+
 
 ## Features
 

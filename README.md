@@ -3,6 +3,7 @@
 ESP32-S3 chamber heater controller with a browser interface, local NTC temperature control, Snapmaker U1 / Moonraker integration, automatic TopCover detection and password-protected Wi-Fi firmware updates.
 
 <img width="3833" height="3472" alt="c4" src="https://github.com/user-attachments/assets/01509b29-1669-4586-98a3-15f4f788ae5d" />
+<img width="1317" height="709" alt="web_gui_1" src="https://github.com/user-attachments/assets/accc4bf0-743e-4650-86ba-8eca439af4a7" />
 
 
 ## Features

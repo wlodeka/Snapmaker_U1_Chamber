@@ -4,7 +4,7 @@ Quantities and ratings below come from the existing parts list or the [draft sch
 
 | Part or function | Recorded specification | Recorded quantity | To confirm on the assembly |
 | --- | --- | --- | --- |
-| Controller | Waveshare ESP32-S3-Zero, 4 MB flash in the existing list | 1 | Exact board and revision. The drawing uses an ESP32-C3 Zero symbol. |
+| Controller | Waveshare ESP32-S3-Zero, 4 MB flash in the existing list | 1 | Exact board revision. The C3 symbol is a placeholder in the drawing. |
 | Optoisolator | PC817, 4-pin | 2 | Manufacturer and exact variant |
 | Temperature sensor | 100 kΩ NTC at 25 °C, β = 3950 K in the sketch, 1% in the existing list | 1 | Exact sensor model, tolerance and beta rating |
 | Divider resistor (R8) | 100 kΩ, 0.125 W, 1% in the existing list | 1 | Fitted resistor rating and tolerance |

@@ -28,7 +28,7 @@ The firmware has no embedded owner's Wi-Fi password, OTA password or printer add
 
 ## Hardware and gallery
 
-- [Draft circuit schematic (PNG)](docs/schematics/chamber_1esp32_schem.png) and [schematic review notes](docs/schematics/README.md). The drawing includes mains circuitry and its board symbol and GPIO labels differ from the firmware. Check these against the working assembly before using the drawing for wiring.
+- [Draft circuit schematic (PNG)](docs/schematics/chamber_1esp32_schem.png) and [schematic review notes](docs/schematics/README.md). The drawing includes mains circuitry and uses a substitute board symbol. Check its GPIO labels against the working assembly before using it for wiring.
 - [Assembly photos](docs/photos/README.md)
 - [Web interface screenshots](docs/screenshots/README.md)
 - [Preliminary bill of materials](BOM/README.md)

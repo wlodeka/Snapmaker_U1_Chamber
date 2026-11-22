@@ -1,6 +1,6 @@
 # Assembly photographs
 
-The repository contains five photographs of the Chamber build.
+All five photographs of the Chamber build were taken by the project owner.
 
 - [c1.jpg](c1.jpg)
 - [c2.jpg](c2.jpg)

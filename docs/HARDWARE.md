@@ -19,4 +19,4 @@ Thermistor model: 100 kOhm at 25 °C, beta 3950. Swapping the fixed resistor and
 
 The sketch uses Wi-Fi rather than a physical control wire to U1. There is no LCD or I2C display dependency. GPIO numbering here is ESP32 numbering, not an unverified connector pin number. Do not reuse the S4 Companion wiring diagram: this is a separate project.
 
-Add the validated circuit to [schematics](schematics/README.md) and the exact parts to [BOM](../BOM/README.md).
+The [schematic notes](schematics/README.md) list differences between the draft drawing and these firmware assignments. The [preliminary BOM](../BOM/README.md) records which parts and values still need confirmation against the working assembly.

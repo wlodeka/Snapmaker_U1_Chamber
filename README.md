@@ -2,9 +2,8 @@
 
 ESP32-S3 chamber heater controller with a browser interface, local NTC temperature control, Snapmaker U1 / Moonraker integration, automatic TopCover detection and password-protected Wi-Fi firmware updates.
 
-<img width="3833" height="3472" alt="c4" src="https://github.com/user-attachments/assets/01509b29-1669-4586-98a3-15f4f788ae5d" />
-<img width="1317" height="709" alt="web_gui_1" src="https://github.com/user-attachments/assets/accc4bf0-743e-4650-86ba-8eca439af4a7" />
-
+![Chamber build](docs/photos/c4.jpg)
+![Chamber web interface](docs/screenshots/web_gui_1.png)
 
 ## Features
 
@@ -27,6 +26,13 @@ This is an **active controller**: besides switching its local heater and fan, it
 
 The firmware has no embedded owner's Wi-Fi password, OTA password or printer address. These are supplied during setup and stored on the controller in NVS.
 
+## Hardware and gallery
+
+- [Draft circuit schematic (PNG)](docs/schematics/chamber_1esp32_schem.png) and [schematic review notes](docs/schematics/README.md). The drawing includes mains circuitry and its board symbol and GPIO labels differ from the firmware. Check these against the working assembly before using the drawing for wiring.
+- [Assembly photos](docs/photos/README.md)
+- [Web interface screenshots](docs/screenshots/README.md)
+- [Preliminary bill of materials](BOM/README.md)
+
 ## Repository contents
 
 | Folder | Contents |
@@ -34,9 +40,9 @@ The firmware has no embedded owner's Wi-Fi password, OTA password or printer add
 | `firmware/Snapmaker_U1_Chamber` | Arduino sketch and required header |
 | `binaries` | Build artifacts and identification instructions |
 | `docs` | Installation, operation, safety and version provenance |
-| `docs/schematics` | Placeholder for owner-supplied circuit drawings |
-| `docs/photos` | Placeholder for assembly photographs |
-| `docs/screenshots` | Placeholder for interface screenshots |
+| `docs/schematics` | Draft circuit schematic and notes |
+| `docs/photos` | Assembly photographs |
+| `docs/screenshots` | Web interface and configuration screenshots |
 | `docs/mechanical` | Placeholder for mounts and enclosure files |
 | `BOM` | Preliminary functional parts list; exact hardware pending |
 

@@ -8,7 +8,7 @@ Quantities and ratings below come from the existing parts list or the [draft sch
 | Optoisolator | PC817, 4-pin | 2 | Manufacturer and exact variant |
 | Temperature sensor | 100 kΩ NTC at 25 °C, β = 3950 K in the sketch, 1% in the existing list | 1 | Exact sensor model, tolerance and beta rating |
 | Divider resistor (R8) | 100 kΩ, 0.125 W, 1% in the existing list | 1 | Fitted resistor rating and tolerance |
-| Series resistors (R1–R7) | 300 Ω, 0.125 W in the existing list. The draft shows 330 Ω. | 7 | Fitted resistance and power rating |
+| Series resistors (R1–R7) | 330 Ω, confirmed by the owner. The previous list records a 0.125 W rating. | 7 | Fitted power rating |
 | Capacitors (C1–C3) | The draft labels C1 as 470 µF, C2 as 100 nF and C3 as 2.2 nF, each 35 V | 1 each on the drawing | Fitted quantity, type, capacitance and voltage rating |
 | Heater and fan switching | The draft labels IC1 and IC2 as SSR-D3805HK. The sketch uses active-high outputs for both functions. | 2 SSRs on the drawing | Fitted models, ratings and number of drivers for each load. The earlier list gave 2 per function. |
 | Heaters | The draft labels PTC-1 and PTC-2 as 150 W each | 2 on the drawing | Fitted models, voltage and power |

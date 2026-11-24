@@ -1,0 +1,10 @@
+.build/
+build/
+*.elf
+*.map
+*.log
+.vscode/
+.DS_Store
+Thumbs.db
+secrets*
+*.nvs

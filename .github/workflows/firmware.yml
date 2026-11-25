@@ -1,0 +1,138 @@
+name: Firmware build and release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware.yml'
+  pull_request:
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  ARDUINO_CLI_VERSION: '1.5.1'
+  ESP32_CORE_VERSION: '3.3.12'
+  ESP32_INDEX: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+  CHAMBER_FQBN: esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=min_spiffs,FlashMode=qio
+  OTA_FILENAME: Snapmaker_U1_Chamber.ino.bin
+
+jobs:
+  build:
+    name: Build ESP32-S3 firmware
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@b3cda96fddef6af6c56b4c5efb5c47e2357935db # v2
+        with:
+          version: ${{ env.ARDUINO_CLI_VERSION }}
+
+      - name: Install the ESP32 platform
+        shell: bash
+        run: |
+          export ARDUINO_DIRECTORIES_DATA="$RUNNER_TEMP/arduino-data"
+          echo "ARDUINO_DIRECTORIES_DATA=$ARDUINO_DIRECTORIES_DATA" >> "$GITHUB_ENV"
+          arduino-cli version
+          arduino-cli core update-index --additional-urls "$ESP32_INDEX"
+          arduino-cli core install "esp32:esp32@$ESP32_CORE_VERSION" --additional-urls "$ESP32_INDEX"
+          arduino-cli core list
+
+      - name: Compile the application
+        shell: bash
+        run: |
+          esp32_core="$ARDUINO_DIRECTORIES_DATA/packages/esp32/hardware/esp32/$ESP32_CORE_VERSION"
+          # Keep runner-specific paths out of __FILE__ diagnostics.
+          path_map="-fmacro-prefix-map=$esp32_core=arduino-esp32-$ESP32_CORE_VERSION -fmacro-prefix-map=$GITHUB_WORKSPACE=."
+          arduino-cli compile \
+            --fqbn "$CHAMBER_FQBN" \
+            --warnings all \
+            --build-property "compiler.c.extra_flags=$path_map" \
+            --build-property "compiler.cpp.extra_flags=$path_map" \
+            --build-path "$RUNNER_TEMP/chamber-build" \
+            --output-dir "$RUNNER_TEMP/chamber-output" \
+            firmware/Snapmaker_U1_Chamber
+          test -s "$RUNNER_TEMP/chamber-output/$OTA_FILENAME"
+
+      - name: Prepare application image and verification files
+        shell: bash
+        run: |
+          compiled="$RUNNER_TEMP/chamber-output/$OTA_FILENAME"
+          compiled_sha="$(sha256sum "$compiled" | cut -d ' ' -f 1)"
+          selected="$compiled"
+          provenance="Compiled from the source commit by GitHub Actions."
+
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/v1.0.0 ]]; then
+            # The initial stable release must use the previously accepted publication image.
+            approved_sha=870bb215d559d1e3cabb090ee71f46bf9dc66d608d12cbc9ac9cc709b39488e1
+            selected="binaries/$OTA_FILENAME"
+            printf '%s  %s\n' "$approved_sha" "$selected" | sha256sum --check --strict
+            provenance="Previously accepted publication image, verified against its pinned SHA-256. The control build was not used as the OTA asset."
+          fi
+
+          mkdir "$RUNNER_TEMP/chamber-ota"
+          cp "$selected" "$RUNNER_TEMP/chamber-ota/$OTA_FILENAME"
+          cd "$RUNNER_TEMP/chamber-ota"
+          sha256sum "$OTA_FILENAME" > SHA256SUMS.txt
+
+          {
+            printf 'Firmware ref: %s\n\n' "$GITHUB_REF_NAME"
+            printf '%s\n\n' "$provenance"
+            printf -- '- Source commit: %s\n' "$GITHUB_SHA"
+            printf -- '- Arduino CLI: %s\n' "$ARDUINO_CLI_VERSION"
+            printf -- '- Arduino-ESP32: %s\n' "$ESP32_CORE_VERSION"
+            printf -- '- FQBN: %s\n' "$CHAMBER_FQBN"
+            printf -- '- Control build SHA-256: %s\n' "$compiled_sha"
+            printf -- '- Selected OTA image SHA-256: %s\n\n' "$(cut -d ' ' -f 1 SHA256SUMS.txt)"
+            printf 'Use the application image for Wi-Fi OTA with a compatible partition table.\n'
+            printf 'Verify its SHA-256 against SHA256SUMS.txt before upload.\n'
+          } > BUILD_INFO.txt
+          cat BUILD_INFO.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload OTA artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chamber-ota
+          path: ${{ runner.temp }}/chamber-ota/
+          if-no-files-found: error
+
+  release:
+    name: Publish tagged release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified OTA artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: chamber-ota
+          path: release-assets
+
+      - name: Publish GitHub Release
+        shell: bash
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum --check --strict SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Snapmaker U1 Chamber $GITHUB_REF_NAME" \
+            --notes-file BUILD_INFO.txt \
+            "$OTA_FILENAME" SHA256SUMS.txt BUILD_INFO.txt

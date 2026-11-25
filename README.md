@@ -4,6 +4,8 @@
 
 This project combines an ESP32-S3-Zero local thermostat with the U1's built-in functions to help prepare the chamber for printing materials that require elevated temperatures. Estimated build cost according to the developer: approximately USD 33. The current firmware has been tested on real hardware by the developer.
 
+**[Recommended Chamber Thermal Insulation](docs/THERMAL_INSULATION.md)**. See the optional door seal and Z-axis cover setup, with safety recommendations and prototype photos.
+
 ![Installed chamber heater assembly](docs/photos/c4.jpg)
 ![Chamber WebGUI overview](docs/screenshots/web_gui_1.png)
 

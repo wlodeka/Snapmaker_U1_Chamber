@@ -2,6 +2,9 @@
 #include <WebServer.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
+#include <memory>
+#include <new>
+#include <nvs.h>
 #include <StreamString.h>
 #include <Update.h>
 #include <atomic>
@@ -842,6 +845,13 @@ String faultDetailsHtml(const FaultDetails &details) {
   return "Target: " + String(details.targetTemperature, 1) + "°C · Uptime: " + String(details.uptimeMs / 1000) + " s";
 }
 
+// Called with the heater mutex held, after the scheduled NTC sample.
+bool heaterHasStartDemand(unsigned long now) {
+  return masterOn && hasValidNtcTemperature && !thermistorFault &&
+         now - lastTempRequest < tempInterval &&
+         currentTemp <= (setTemp - (hyst / 2.0)) && currentTemp < maxTempLimit;
+}
+
 // This is the sole runtime owner of RELAY_PIN and FAN_PIN.
 void heaterSafetyTask(void *parameter) {
   // Query first: Arduino-ESP32 often initializes the global TWDT before this
@@ -995,7 +1005,7 @@ void heaterSafetyTask(void *parameter) {
       switch (chamberState) {
         case IDLE:
           heaterSafetyWriteRelay(false, currentMillis);
-          if (masterOn && currentTemp <= (setTemp - (hyst / 2.0)) && currentTemp < maxTempLimit) {
+          if (heaterHasStartDemand(currentMillis)) {
             digitalWrite(FAN_PIN, HIGH);
             stateStartTime = currentMillis;
             chamberState = PRE_FAN_WAITING;
@@ -1007,7 +1017,10 @@ void heaterSafetyTask(void *parameter) {
           heaterSafetyWriteRelay(false, currentMillis);
           digitalWrite(FAN_PIN, HIGH);
           if (currentMillis - stateStartTime >= preFanTime) {
-            if (heaterSafetyRelayMayTurnOn(currentMillis)) {
+            if (!heaterHasStartDemand(currentMillis)) {
+              chamberState = POST_FAN_COOLING;
+              stateStartTime = currentMillis;
+            } else if (heaterSafetyRelayMayTurnOn(currentMillis)) {
               heaterSafetyWriteRelay(true, currentMillis);
               chamberState = HEATING_ACTIVE;
             } else if (!minOffBlockedReported) {
@@ -2337,8 +2350,40 @@ void handleDeviceConfig() {
   ESP.restart();
 }
 
+// Read NVS directly so a storage error cannot be mistaken for first setup.
+bool authorizeOtaSettingsChange() {
+  nvs_handle_t handle;
+  if (nvs_open("chamber", NVS_READONLY, &handle) != ESP_OK) {
+    server.send(503, "text/plain", "OTA credential storage is unavailable.");
+    return false;
+  }
+  size_t size = 0;
+  const esp_err_t lookup = nvs_get_str(handle, "otaPass", nullptr, &size);
+  if (lookup == ESP_ERR_NVS_NOT_FOUND) {
+    nvs_close(handle);
+    return true;
+  }
+  std::unique_ptr<char[]> stored;
+  if (lookup == ESP_OK && size > 1) stored.reset(new (std::nothrow) char[size]);
+  const bool read = stored && nvs_get_str(handle, "otaPass", stored.get(), &size) == ESP_OK;
+  nvs_close(handle);
+  if (!read) {
+    server.send(503, "text/plain", "OTA credential storage is unavailable.");
+    return false;
+  }
+  if (server.arg("currentOtaPassword") != stored.get()) {
+    server.send(403, "text/plain", "The current firmware update password is required.");
+    return false;
+  }
+  return true;
+}
+
 void handleFactoryReset() {
-  if (!prepareControllerRestart()) return;
+  if (server.arg("confirm") != "1") {
+    server.send(400, "text/plain", "Factory reset requires confirmation.");
+    return;
+  }
+  if (!authorizeOtaSettingsChange() || !prepareControllerRestart()) return;
   if (!preferences.clear()) {
     server.send(500, "text/plain", "Factory reset could not clear saved settings. Controller restart cancelled.");
     return;
@@ -2363,6 +2408,7 @@ bool otaRequestAuthorized() {
 }
 
 void handleOtaPassword() {
+  if (!authorizeOtaSettingsChange()) return;
   const String requestedPassword = server.arg("otaPassword");
   if (requestedPassword.length() < OTA_PASSWORD_MIN_LENGTH) {
     deviceConfigMessage = "Firmware update password must have at least 8 characters.";
@@ -2633,41 +2679,46 @@ void handleFaultReset() {
   server.send(303);
 }
 
-void handleToggle() {
-  bool startBlocked = false;
-  bool manualStop = false;
+void handleStart() {
   if (!heaterSafetyLock()) {
-    startBlocked = true;
-  } else {
-    if (!heaterSafetySystemReady || safetyFaultLatched || otaUpdateRequested) {
-      masterOn = false;
-      startBlocked = true;
-    } else if (masterOn) {
-      // STOP disarms local heating before any U1 cleanup is scheduled.
-      masterOn = false;
-      autoStopLock = true;
-      manualStop = true;
-    } else {
+    server.send(503, "text/plain", "Safety lock unavailable. Start rejected.");
+    return;
+  }
+  const bool allowed = heaterSafetySystemReady && !safetyFaultLatched && !otaUpdateRequested;
+  if (allowed && !masterOn) autoStopLock = false;
+  masterOn = allowed;
+  heaterSafetyUnlock();
+  if (!allowed) {
+    Serial.println("SAFETY START BLOCKED: safety system or fault latch active");
+    server.send(409, "text/plain", "Safety system or lockout prevents starting.");
+    return;
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
 
-      autoStopLock = false;
-      masterOn = true;
-    }
-    heaterSafetyUnlock();
+void handleStop() {
+  if (!heaterSafetyLock()) {
+    server.send(503, "text/plain", "Safety lock unavailable. Stop could not be processed.");
+    return;
   }
-  if (startBlocked) Serial.println("SAFETY START BLOCKED: safety system or fault latch active");
-  if (manualStop) {
-    if (preheatMode) {
-      stopBedAssistManual();
-      preheatMode = false;
-      preheatReady = false;
-    }
-    releaseU1FansIfOwned("MANUAL STOP");
+  const bool wasArmed = masterOn;
+  masterOn = false;
+  if (wasArmed) autoStopLock = true;
+  heaterSafetyUnlock();
+
+  const bool wasPreheat = preheatMode;
+  if (wasPreheat) {
+    stopBedAssistManual();
+    preheatMode = false;
+    preheatReady = false;
   }
+  if (wasArmed || wasPreheat) releaseU1FansIfOwned("MANUAL STOP");
 
   server.sendHeader("Location", "/");
   server.send(303);
 }
- 
+
 void saveTargetTemperature(float requestedValue, bool relative) {
   if (!heaterSafetyLock()) {
     server.send(503, "text/plain", "Safety lock unavailable. Target temperature was not saved.");
@@ -2775,7 +2826,8 @@ void setup() {
   else startConfigPortal();
 
   server.on("/", handleRoot);
-  server.on("/toggle", handleToggle);
+  server.on("/start", HTTP_POST, handleStart);
+  server.on("/stop", HTTP_POST, handleStop);
   server.on("/mode", handleMode);
   server.on("/set", handleSet);
   server.on("/adjust", handleAdjust);
@@ -2790,7 +2842,7 @@ void setup() {
   server.on("/update", HTTP_GET, handleOtaPage);
   server.on("/update", HTTP_POST, handleOtaUploadComplete, handleOtaUpload);
   server.on("/restart", handleControllerRestart);
-  server.on("/factoryreset", handleFactoryReset);
+  server.on("/factoryreset", HTTP_POST, handleFactoryReset);
   server.begin();
 
   heaterSafetyMutex = xSemaphoreCreateMutex();

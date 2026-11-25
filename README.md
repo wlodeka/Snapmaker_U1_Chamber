@@ -2,9 +2,19 @@
 
 **Active chamber heating for the Snapmaker U1 — a DIY smart controller with Moonraker integration.**
 
-This project combines an ESP32-S3-Zero local thermostat with the U1's built-in functions to help prepare the chamber for printing materials that require elevated temperatures. Estimated build cost according to the developer: approximately USD 33. The current firmware has been tested on real hardware by the developer.
+> **230 V mains voltage.** Assembly and electrical work require appropriate qualifications, independent thermal protection and a properly protected installation. [Read the safety requirements](docs/SAFETY.md).
+
+This project combines an ESP32-S3-Zero local thermostat with the U1's built-in functions to help prepare the chamber for printing materials that require elevated temperatures. Estimated build cost according to the developer: approximately USD 33. The developer tested the behavior included in stable v1.0.0 on real hardware.
 
 **[Recommended Chamber Thermal Insulation](docs/THERMAL_INSULATION.md)**. See the optional door seal and Z-axis cover setup, with safety recommendations and prototype photos.
+
+## Getting Started
+
+1. Review the [safety requirements](docs/SAFETY.md), [BOM](BOM/README.md) and [circuit schematic](docs/schematics/README.md).
+2. Use [first installation over USB](docs/INSTALLATION.md#first-usb-installation) to program the ESP32-S3 and its partition table.
+3. Use [Wi-Fi OTA](docs/INSTALLATION.md#ota-update) for later application updates on a controller with the matching partition table.
+
+[v1.0.0 is the latest stable release](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.0). [v1.0.1-rc.1 is a test release awaiting extended physical testing](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.1-rc.1). [Changelog](CHANGELOG.md)
 
 ![Installed chamber heater assembly](docs/photos/c4.jpg)
 ![Chamber WebGUI overview](docs/screenshots/web_gui_1.png)
@@ -22,7 +32,7 @@ This project combines an ESP32-S3-Zero local thermostat with the U1's built-in f
 | Mode | Operation |
 |---|---|
 | MANUAL | START arms the local thermostat. During active heating, with confirmed U1 idle status and detected TopCover, the controller sets TopCover circulation to 60%. It does not control the bed or cavity_fan. |
-| PREHEAT | Selecting this mode requests BED ASSIST: bed at 100°C, cavity_fan at 30%, and TopCover circulation at 60% during active heating when the cover is detected. The local thermostat requires a separate START. |
+| PREHEAT | Selecting this mode requests BED ASSIST: bed at 100°C, cavity_fan at 30%, and TopCover circulation at 60% during active heating when the cover is detected. The local thermostat requires a separate START. Select MANUAL to end BED ASSIST before START. |
 | READY | A one-time visual indication and three buzzer pulses when chamber temperature reaches the target minus half the hysteresis. It does not stop heating or assistance, or confirm bed readiness. |
 
 BED ASSIST can renew the bed target every 240 seconds. Every write to U1 requires fresh confirmation of `standby`, `complete` or `cancelled`. Paused, error and unknown states do not authorize writes.
@@ -50,7 +60,7 @@ Example: with a 50°C target and 0.8°C hysteresis, a heating cycle starts at or
 | Mechanism | Operation |
 |---|---|
 | FreeRTOS safety task | Dedicated task with a nominal 100 ms cycle, separate from U1 HTTP operations. |
-| Watchdog | 5 s TWDT with panic enabled; failure to register prevents heating. |
+| Watchdog | The pinned Arduino-ESP32 3.3.12 profile provides a 5 s TWDT with panic enabled. Failure to register prevents heating. |
 | Infrastructure failure | Task or mutex creation failure, or failure to acquire the lock, forces the relay OFF and local fan ON. |
 | NTC validation | Nominal 750 ms sampling; the first invalid reading latches a fault. Valid readings require voltage >20 and <3280 mV, resistance 1 kΩ–1.2 MΩ and finite temperature −15…120°C. |
 | Adjustable limit | At the limit, heater OFF and post-fan; reaching a limit below 65°C does not itself latch a fault. |

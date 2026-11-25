@@ -400,6 +400,7 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
             </header>
             <form id="ota-password-form" action="/otapassword" method="post">
               <div class="fields">
+                <label class="field span" id="current-ota-password-field" hidden><span>Current firmware update password</span><input class="input" name="currentOtaPassword" type="password" autocomplete="current-password" disabled></label>
                 <label class="field span"><span>Firmware update password</span><input class="input" name="otaPassword" type="password" minlength="8" maxlength="64" autocomplete="off" placeholder="At least 8 characters" required></label>
               </div>
               <div class="form-actions"><button class="button primary" type="submit">Save update password</button><button class="button" type="button" id="open-ota">Firmware update (Wi-Fi)</button></div>
@@ -436,6 +437,7 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
   <dialog class="dialog" id="confirm-dialog" aria-labelledby="confirm-title">
     <header class="card-head"><h2 id="confirm-title"></h2></header>
     <p class="subtext" id="confirm-text"></p>
+    <label class="field" id="confirm-ota-password-field" hidden><span>Current firmware update password</span><input class="input" id="confirm-ota-password" type="password" autocomplete="current-password"></label>
     <div class="form-actions"><button class="button" type="button" data-close="confirm-dialog" autofocus>Cancel</button><button class="button" type="button" id="confirm-action"></button></div>
   </dialog>
 
@@ -585,6 +587,10 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
 
     function renderConfiguration() {
       const configured = view.ota === '1';
+      const currentPassword = byId('ota-password-form').elements.currentOtaPassword;
+      byId('current-ota-password-field').hidden = !configured;
+      currentPassword.disabled = !configured;
+      currentPassword.required = configured;
       setTone('ota-status', configured ? 'Password configured' : 'Password required', configured ? 'ok' : 'warm');
       byId('setup-notice').hidden = view.portal !== '1';
       const virtual = view.virtual === '1';
@@ -732,7 +738,11 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
       }
     }
 
-    function openConfirmation(title, message, label, dangerous, action) {
+    function openConfirmation(title, message, label, dangerous, action, needsOtaPassword = false) {
+      const password = byId('confirm-ota-password');
+      password.value = '';
+      password.required = needsOtaPassword;
+      byId('confirm-ota-password-field').hidden = !needsOtaPassword;
       setText('confirm-title', title);
       setText('confirm-text', message);
       const button = byId('confirm-action');
@@ -792,7 +802,13 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
       requestAnimationFrame(redrawCharts);
     }
 
-    for (const [id, path] of Object.entries({ power: '/toggle', minus: '/adjust?d=-1', plus: '/adjust?d=1', 'fault-reset': '/faultreset' })) {
+    byId('power').addEventListener('click', () => {
+      const label = byId('power-label').textContent;
+      if (label !== 'START' && label !== 'STOP') return;
+      const path = label === 'STOP' ? '/stop' : '/start';
+      runAction(() => controllerAction(path, { method: 'POST' }));
+    });
+    for (const [id, path] of Object.entries({ minus: '/adjust?d=-1', plus: '/adjust?d=1', 'fault-reset': '/faultreset' })) {
       byId(id).addEventListener('click', () => runAction(() => controllerAction(path)));
     }
     for (const mode of ['manual', 'preheat']) {
@@ -816,10 +832,14 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
       button.addEventListener('click', () => byId(button.dataset.close).close());
     }
     byId('confirm-action').addEventListener('click', () => {
+      const password = byId('confirm-ota-password');
+      if (password.required && !password.reportValidity()) return;
+      const currentOtaPassword = password.value;
       const action = confirmation;
       byId('confirm-dialog').close();
-      action();
+      action(currentOtaPassword);
     });
+    byId('confirm-dialog').addEventListener('close', () => { byId('confirm-ota-password').value = ''; });
 
     function selectVirtual(choice) {
       const standby = choice.startsWith('standby');
@@ -840,7 +860,12 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
       () => runAction(async () => startRestartWait(await responseMessage(await controllerAction('/restart'))))));
     byId('factory-reset').addEventListener('click', () => openConfirmation('Factory reset?',
       'Delete Wi-Fi, U1 IP and all saved controller settings?', 'Factory reset', true,
-      () => runAction(async () => startRestartWait(await responseMessage(await controllerAction('/factoryreset'))))));
+      currentOtaPassword => runAction(async () => {
+        const body = new URLSearchParams({ confirm: '1', currentOtaPassword });
+        const response = await controllerAction('/factoryreset', { method: 'POST', body });
+        startRestartWait(await responseMessage(response));
+      }), view.ota === '1'));
+
 
     byId('thermal-form').addEventListener('submit', event => {
       event.preventDefault();

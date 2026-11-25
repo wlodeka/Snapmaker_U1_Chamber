@@ -16,6 +16,10 @@ Get-FileHash -Algorithm SHA256 -LiteralPath .\Snapmaker_U1_Chamber.ino.bin
 
 Upload the verified image using the controller's Wi-Fi OTA page. For first installation or a board that needs a new partition table, use the USB procedure in the [installation instructions](INSTALLATION.md).
 
+## Release channels
+
+[v1.0.0](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.0) remains the latest stable release. [v1.0.1-rc.1](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.1-rc.1) is a pre-release intended for supervised testing. Extended physical testing is pending. [Changelog](../CHANGELOG.md)
+
 ## First stable release
 
 [v1.0.0](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.0) contains the previously accepted publication image from 24 November 2026. Its SHA-256 is `870bb215d559d1e3cabb090ee71f46bf9dc66d608d12cbc9ac9cc709b39488e1` and its size is 1,171,600 bytes. The [original package manifest](https://github.com/wlodeka/Snapmaker_U1_Chamber/blob/v1.0.0/binaries/SHA256SUMS.txt) also records the three source file hashes.

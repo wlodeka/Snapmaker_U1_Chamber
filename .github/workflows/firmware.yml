@@ -7,10 +7,12 @@ on:
     paths:
       - 'firmware/**'
       - '.github/workflows/firmware.yml'
+      - 'tests/**'
   pull_request:
     paths:
       - 'firmware/**'
       - '.github/workflows/firmware.yml'
+      - 'tests/**'
   workflow_dispatch:
 
 permissions: {}
@@ -35,6 +37,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Run host regression tests
+        shell: bash
+        run: |
+          node tests/run-regressions.cjs "$RUNNER_TEMP/chamber-tests"
+          c++ -std=c++20 -I "$RUNNER_TEMP/chamber-tests" tests/regression.cpp -o "$RUNNER_TEMP/chamber-tests/regression"
+          "$RUNNER_TEMP/chamber-tests/regression"
+
       - name: Set up Arduino CLI
         uses: arduino/setup-arduino-cli@b3cda96fddef6af6c56b4c5efb5c47e2357935db # v2
         with:
@@ -50,6 +59,20 @@ jobs:
           arduino-cli core install "esp32:esp32@$ESP32_CORE_VERSION" --additional-urls "$ESP32_INDEX"
           arduino-cli core list
 
+      - name: Check the Task Watchdog configuration
+        shell: bash
+        run: |
+          properties="$(arduino-cli compile --fqbn "$CHAMBER_FQBN" --show-properties=expanded firmware/Snapmaker_U1_Chamber)"
+          sdk="$(sed -n 's/^compiler\.sdk\.path=//p' <<< "$properties")"
+          variant="$(sed -n 's/^build\.memory_type=//p' <<< "$properties")"
+          test -n "$sdk"
+          test -n "$variant"
+          config="$sdk/$variant/include/sdkconfig.h"
+          echo "Checking TWDT in $variant"
+          grep -Ex '#define CONFIG_ESP_TASK_WDT_INIT 1' "$config"
+          grep -Ex '#define CONFIG_ESP_TASK_WDT_PANIC 1' "$config"
+          grep -Ex '#define CONFIG_ESP_TASK_WDT_TIMEOUT_S 5' "$config"
+
       - name: Compile the application
         shell: bash
         run: |
@@ -64,7 +87,7 @@ jobs:
             --build-path "$RUNNER_TEMP/chamber-build" \
             --output-dir "$RUNNER_TEMP/chamber-output" \
             firmware/Snapmaker_U1_Chamber
-          test -s "$RUNNER_TEMP/chamber-output/$OTA_FILENAME"
+          node tests/verify-ota.cjs "$RUNNER_TEMP/chamber-output/$OTA_FILENAME"
 
       - name: Prepare application image and verification files
         shell: bash
@@ -98,6 +121,10 @@ jobs:
             printf -- '- Selected OTA image SHA-256: %s\n\n' "$(cut -d ' ' -f 1 SHA256SUMS.txt)"
             printf 'Use the application image for Wi-Fi OTA with a compatible partition table.\n'
             printf 'Verify its SHA-256 against SHA256SUMS.txt before upload.\n'
+            if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+              printf '\nRelease Candidate for supervised testing. Extended physical testing is pending.\n'
+              awk -v heading="## $GITHUB_REF_NAME" '$0 == heading { active = 1; next } /^## / && active { exit } active { print }' "$GITHUB_WORKSPACE/CHANGELOG.md"
+            fi
           } > BUILD_INFO.txt
           cat BUILD_INFO.txt >> "$GITHUB_STEP_SUMMARY"
 
@@ -130,7 +157,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha256sum --check --strict SHA256SUMS.txt
-          gh release create "$GITHUB_REF_NAME" \
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            release_flags+=(--prerelease --latest=false)
+          fi
+          gh release create "$GITHUB_REF_NAME" "${release_flags[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Snapmaker U1 Chamber $GITHUB_REF_NAME" \

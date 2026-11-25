@@ -6,8 +6,8 @@ The owner tested and accepted the current operating behavior on a physical Snapm
 
 - The [Arduino sketch](../firmware/Snapmaker_U1_Chamber/Snapmaker_U1_Chamber.ino), [forward declarations](../firmware/Snapmaker_U1_Chamber/chamber_forward_types.h) and [WebGUI](../firmware/Snapmaker_U1_Chamber/chamber_web_ui.h) form the source package.
 - Packaging edits to the firmware were confined to comments. The shipped WebGUI matches the version that was tested.
-- The [OTA application](../binaries/Snapmaker_U1_Chamber.ino.bin) was compiled with the documented Arduino-ESP32 3.3.12 profile. Compiler macro path mapping removes local account paths from Arduino core diagnostic strings. The packaging build was verified offline against the hardware-tested build.
-- The [binary record](../binaries/README.md) and [SHA-256 manifest](../binaries/SHA256SUMS.txt) identify the packaged application and sources.
+- The OTA application distributed in [v1.0.0](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.0) was compiled with the documented Arduino-ESP32 3.3.12 profile. Compiler path normalization removes local account paths from Arduino core diagnostic strings. The packaging image was verified offline against the hardware-tested build.
+- The [firmware release record](FIRMWARE_RELEASES.md#first-stable-release) identifies the packaged application and links to the original source checksums.
 
 ## Hardware and licensing
 

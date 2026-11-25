@@ -86,7 +86,7 @@ Virtual U1 simulates idle with or without TopCover, printing, completion and can
 
 ## Firmware and project resources
 
-The hardware-tested firmware uses Arduino-ESP32 3.3.12, 4 MB flash and the `min_spiffs` partition scheme. See the [OTA binary and build record](binaries/README.md), [application image](binaries/Snapmaker_U1_Chamber.ino.bin) and [SHA-256 checksums](binaries/SHA256SUMS.txt).
+Download the OTA application and its SHA-256 checksum from [GitHub Releases](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases). See [firmware releases and verification](docs/FIRMWARE_RELEASES.md) for the hardware-tested version, build profile and download instructions.
 
 - [Firmware sketch](firmware/Snapmaker_U1_Chamber/Snapmaker_U1_Chamber.ino)
 - [Installation and OTA instructions](docs/INSTALLATION.md), [operation](docs/OPERATION.md) and [safety limits](docs/SAFETY.md)

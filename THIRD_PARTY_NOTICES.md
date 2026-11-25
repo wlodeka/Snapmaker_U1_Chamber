@@ -9,6 +9,6 @@ The sketch uses Arduino-ESP32 and its bundled libraries for networking, HTTP, We
 | Arduino-ESP32 prebuilt libraries | [Espressif library builder](https://github.com/espressif/esp32-arduino-lib-builder), build revision `6671d0b` |
 | libb64 in the Arduino core | [Public-domain dedication supplied with the core](LICENSES/libb64.txt) |
 
-The Arduino profile, application source and version information are in the [installation instructions](docs/INSTALLATION.md) and [binary record](binaries/README.md). Distribution of the linked OTA image is subject to the bundled components' terms, including the corresponding-source and relinking provisions of LGPL section 6. The MIT license covers the original Chamber source.
+The Arduino profile, application source and version information are in the [installation instructions](docs/INSTALLATION.md) and [firmware release record](docs/FIRMWARE_RELEASES.md). Distribution of the linked OTA image is subject to the bundled components' terms, including the corresponding-source and relinking provisions of LGPL section 6. The MIT license covers the original Chamber source.
 
 The circuit schematic was drawn with [Fritzing](https://fritzing.org/). The export retains its Fritzing mark. Snapmaker and other product marks belong to their respective owners.

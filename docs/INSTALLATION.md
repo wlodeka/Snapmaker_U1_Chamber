@@ -33,7 +33,7 @@ U1 must expose the required Moonraker objects and G-code commands on TCP port 71
 2. Set an update password of at least eight characters in the connection/settings area.
 3. Open **FIRMWARE UPDATE (Wi-Fi)**, or `/update`.
 4. Username: **`chamber`**. Password: the one saved on your controller.
-5. Upload [Snapmaker_U1_Chamber.ino.bin](../binaries/Snapmaker_U1_Chamber.ino.bin), the application image. Check it against the [SHA-256 manifest](../binaries/SHA256SUMS.txt).
+5. Download `Snapmaker_U1_Chamber.ino.bin` and `SHA256SUMS.txt` from the same [GitHub Release](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases). [Verify the SHA-256](FIRMWARE_RELEASES.md#download-and-verify-the-ota-image) before uploading the application image.
 
 Never upload a bootloader, partition-table, merged flash image or NVS dump through this page. The safety task must acknowledge the local heater OFF before a flash write starts. The local fan remains on during upload. Successful upload restarts the controller; heating requires a new explicit START. A failed upload can leave the safety lockout active until restart.
 

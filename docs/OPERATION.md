@@ -35,7 +35,13 @@ The controller does not use slicer changes or M141/M191 chamber macros for this 
 
 ## Virtual U1 diagnostics
 
-Virtual U1 supports standby with or without TopCover, printing, completion and cancellation. It defaults OFF after restart. Switching between simulated and real U1 discards pending commands and ownership. A real request already in flight may finish. Local heater, fan, temperature sensing and buzzer remain active hardware during simulation. Use it with a supervised test setup.
+Enable **Virtual U1** in Configuration to exercise Chamber’s integration logic without a connected printer. Select Standby with or without TopCover, Printing, Complete or Cancelled. These simulated states cover the integration and handoff paths of Chamber.
+
+Each LED shows whether Chamber actively controls that output. The number below it is the last simulated command for the current session. Selecting Printing hands control to the print and extinguishes the LEDs. The displayed targets remain available for diagnosis, and zero commands appear only when Chamber generates them.
+
+The **Simulation Event Log** displays the most recent 48 events, with timestamps relative to controller boot. TX entries are simulated commands, RX SIM entries are simulated statuses and acknowledgements, and SYSTEM entries are observed controller events. The command count resets when simulation is re-enabled. The countdown uses the actual BED ASSIST renewal interval; its pending state indicates a queued renewal.
+
+Virtual U1 defaults OFF after restart. Switching between simulated and real U1 discards pending commands and ownership. A real request already in flight may finish. **The local heater, fan, NTC and buzzer remain active hardware during simulation.** Use it with a supervised test setup. HEATER and FAN in the overview show the controller’s reported outputs.
 
 ## Configuration and history
 

@@ -15,6 +15,7 @@
 #include <esp_idf_version.h>
 #include "chamber_forward_types.h"
 #include "chamber_web_ui.h"
+#include "chamber_virtual_u1.h"
 
 #define RELAY_PIN 5
 #define FAN_PIN 6
@@ -215,6 +216,7 @@ portMUX_TYPE virtualU1Mux = portMUX_INITIALIZER_UNLOCKED;
 bool virtualU1Enabled = false;
 MoonPrinterStateCode virtualU1PrinterState = MOON_PRINT_STANDBY;
 bool virtualU1TopCoverDetected = true;
+VirtualU1Trace virtualU1Trace;
 
 bool virtualU1IsEnabled() {
   portENTER_CRITICAL(&virtualU1Mux);
@@ -231,10 +233,33 @@ void getVirtualU1State(MoonPrinterStateCode &state, bool &topCover) {
 }
 
 void setVirtualU1State(bool enabled, MoonPrinterStateCode state, bool topCover) {
+  const uint32_t now = millis();
   portENTER_CRITICAL(&virtualU1Mux);
+  if (enabled) {
+    if (!virtualU1Enabled) virtualU1Trace.beginSession(now);
+    if (!virtualU1Enabled || state != virtualU1PrinterState) {
+      const VirtualEvent event = state == MOON_PRINT_PRINTING ? VirtualEvent::Printing :
+                                 state == MOON_PRINT_COMPLETE ? VirtualEvent::Complete :
+                                 state == MOON_PRINT_CANCELLED ? VirtualEvent::Cancelled : VirtualEvent::Standby;
+      virtualU1Trace.add(now, event);
+      virtualU1Trace.handoffReported = false;
+    }
+    if (!virtualU1Enabled || topCover != virtualU1TopCoverDetected) {
+      virtualU1Trace.add(now, VirtualEvent::TopCover, topCover);
+    }
+  } else if (virtualU1Enabled) {
+    virtualU1Trace.add(now, VirtualEvent::Disabled);
+  }
   virtualU1Enabled = enabled;
   virtualU1PrinterState = state;
   virtualU1TopCoverDetected = topCover;
+  portEXIT_CRITICAL(&virtualU1Mux);
+}
+
+void logVirtualEvent(VirtualEvent event) {
+  const uint32_t now = millis();
+  portENTER_CRITICAL(&virtualU1Mux);
+  if (virtualU1Enabled) virtualU1Trace.add(now, event);
   portEXIT_CRITICAL(&virtualU1Mux);
 }
 
@@ -1127,12 +1152,19 @@ MoonPrinterStateCode parsePrinterState(const String &value) {
   return MOON_PRINT_OTHER;
 }
 
-int sendMoonrakerGcode(const char *script) {
-  if (virtualU1IsEnabled()) {
+int sendMoonrakerGcode(const U1DesiredState &desired, const char *script, VirtualEvent event, int16_t value) {
+  if (desired.simulated) {
+    // An admitted simulator command must never fall through to HTTP on exit.
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&virtualU1Mux);
+    const bool allow = virtualU1Enabled && virtualU1PrinterState != MOON_PRINT_PRINTING;
+    if (allow) virtualU1Trace.command(now, event, value);
+    portEXIT_CRITICAL(&virtualU1Mux);
+    if (!allow) return -1;
     Serial.printf("VIRTUAL U1 GCODE: %s\n", script);
     return HTTP_CODE_OK;
   }
-  if (WiFi.status() != WL_CONNECTED || moonrakerGcodeUrl.length() == 0) return -1;
+  if (virtualU1IsEnabled() || WiFi.status() != WL_CONNECTED || moonrakerGcodeUrl.length() == 0) return -1;
 
   HTTPClient http;
   http.setConnectTimeout(500);
@@ -1140,12 +1172,12 @@ int sendMoonrakerGcode(const char *script) {
   if (!http.begin(moonrakerGcodeUrl)) return -1;
   http.addHeader("Content-Type", "application/json");
   String body = String("{\"script\":\"") + script + "\"}";
-  int httpCode = http.POST(body);
+  const int httpCode = virtualU1IsEnabled() ? -1 : http.POST(body);
   http.end();
   return httpCode;
 }
 
-int sendMoonrakerFanSpeed(const char *fanName, float speed) {
+int sendMoonrakerFanSpeed(const U1DesiredState &desired, const char *fanName, float speed) {
   // Send circulation fan commands only when U1 confirms a TopCover.
   // An absent or unknown cover skips the POST at any requested speed.
   // Treat a skipped POST as successful so other BED ASSIST commands can proceed.
@@ -1160,7 +1192,7 @@ int sendMoonrakerFanSpeed(const char *fanName, float speed) {
   }
   char script[96];
   snprintf(script, sizeof(script), "SET_FAN_SPEED FAN=%s SPEED=%.2f", fanName, speed);
-  return sendMoonrakerGcode(script);
+  return sendMoonrakerGcode(desired, script, VirtualEvent::TopCoverFan, (int16_t)lroundf(speed * 100.0f));
 }
 
 // Keep the parser types and its helper functions in a C++ namespace.  The
@@ -1532,7 +1564,8 @@ int sendU1BedTarget(const U1DesiredState &desired, int target) {
   const bool simulated = virtualU1IsEnabled();
   char script[80];
   snprintf(script, sizeof(script), "SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=%d", target);
-  const int code = sendMoonrakerGcode(script);
+  const VirtualEvent event = desired.operation == U1_DESIRED_BED_ASSIST_RENEW ? VirtualEvent::BedRenewal : VirtualEvent::BedTarget;
+  const int code = sendMoonrakerGcode(desired, script, event, target);
   if (code == HTTP_CODE_OK && virtualU1IsEnabled() == simulated && u1CommandLock()) {
     // A STOP can arrive while TARGET=100 is in flight. It may still turn off
     // that target, but a canceled generation from PRINTING cannot own it.
@@ -1603,16 +1636,17 @@ void processMoonrakerCommand(const MoonrakerCommand &command) {
       allOk = result.primaryHttpCode == HTTP_CODE_OK;
     }
   } else if (authorizeU1Write(desired, result, nullptr)) {
-    result.primaryHttpCode = sendMoonrakerFanSpeed("circulation_fan", desired.circulationSpeed);
+    result.primaryHttpCode = sendMoonrakerFanSpeed(desired, "circulation_fan", desired.circulationSpeed);
     allOk = result.primaryHttpCode == HTTP_CODE_OK;
 
     const bool startsAssist = desired.operation == U1_DESIRED_BED_ASSIST_START;
     const bool controlsCavity = startsAssist || desired.operation == U1_DESIRED_BED_ASSIST_MANUAL_OFF ||
                                 desired.operation == U1_DESIRED_RELEASE_FANS;
     if (controlsCavity && (!startsAssist || allOk) && authorizeU1Write(desired, result, nullptr)) {
-      result.secondaryHttpCode = desired.cavitySpeed > 0.0f ?
-        sendMoonrakerGcode("SET_FAN_SPEED FAN=cavity_fan SPEED=0.3") :
-        sendMoonrakerGcode("SET_FAN_SPEED FAN=cavity_fan SPEED=0");
+      const bool cavityOn = desired.cavitySpeed > 0.0f;
+      result.secondaryHttpCode = sendMoonrakerGcode(desired,
+        cavityOn ? "SET_FAN_SPEED FAN=cavity_fan SPEED=0.3" : "SET_FAN_SPEED FAN=cavity_fan SPEED=0",
+        VirtualEvent::CavityFan, cavityOn ? 30 : 0);
       allOk = allOk && result.secondaryHttpCode == HTTP_CODE_OK;
 
       if (desired.bedAction == U1_BED_TARGET_100 && allOk && authorizeU1Write(desired, result, nullptr)) {
@@ -1779,6 +1813,7 @@ void updateBedAssistCirculationFan() {
 }
 
 void clearBedAssistState() {
+  if (bedAssistActive || bedAssistRenewPending) logVirtualEvent(VirtualEvent::RenewalCancelled);
   bedAssistActive = false;
   bedAssistPending = false;
   bedAssistRenewPending = false;
@@ -1810,7 +1845,16 @@ void discardU1Control() {
 
 void handoffU1ToPrint() {
   // The print may already have set its targets, so discard even a queued STOP.
+  const bool wasPreheat = preheatMode;
   discardU1Control();
+  const uint32_t now = millis();
+  portENTER_CRITICAL(&virtualU1Mux);
+  if (virtualU1Enabled && virtualU1PrinterState == MOON_PRINT_PRINTING && !virtualU1Trace.handoffReported) {
+    if (wasPreheat) virtualU1Trace.add(now, VirtualEvent::PreheatToManual);
+    virtualU1Trace.add(now, VirtualEvent::Handoff);
+    virtualU1Trace.handoffReported = true;
+  }
+  portEXIT_CRITICAL(&virtualU1Mux);
   printerState = "printing";
   printWasActive = true;
   preheatMode = false;
@@ -1998,6 +2042,40 @@ void applyMoonrakerSnapshot(const MoonrakerSnapshot &snapshot) {
     diagMoonTotalLastUs / 1000, diagHeapCurrent, diagHeapMin);
 }
 
+
+void handleVirtualDiagnostics() {
+  VirtualU1Trace snapshot;
+  portENTER_CRITICAL(&virtualU1Mux);
+  snapshot = virtualU1Trace;
+  const bool canControl = virtualU1Enabled && virtualU1PrinterState != MOON_PRINT_PRINTING;
+  portEXIT_CRITICAL(&virtualU1Mux);
+
+  const bool renewing = canControl && bedAssistActive && preheatMode;
+  const uint32_t elapsed = millis() - lastBedAssistRenew;
+  const uint32_t remaining = BED_ASSIST_RENEW_INTERVAL - min(elapsed, BED_ASSIST_RENEW_INTERVAL);
+  const bool bedOn = renewing && snapshot.bed > 0;
+  const bool cavityOn = canControl && u1CavityFanOwned && snapshot.cavity > 0;
+  const bool topOn = canControl && u1CirculationFanOwned && u1TopCoverDetectionValid &&
+                     u1TopCoverDetected && snapshot.topCover > 0;
+  String json;
+  json.reserve(168 + snapshot.count * 24);
+  char field[168];
+  snprintf(field, sizeof(field),
+           "{\"targets\":[%d,%d,%d],\"active\":[%u,%u,%u],\"commands\":%lu,\"revision\":%lu,\"renew\":%ld,\"pending\":%u,\"events\":[",
+           snapshot.bed, snapshot.cavity, snapshot.topCover, (unsigned)bedOn, (unsigned)cavityOn,
+           (unsigned)topOn, (unsigned long)snapshot.commands, (unsigned long)snapshot.revision,
+           renewing ? (long)remaining : -1L, (unsigned)(renewing && bedAssistRenewPending));
+  json += field;
+  for (uint8_t i = 0; i < snapshot.count; ++i) {
+    const auto &entry = snapshot.oldest(i);
+    snprintf(field, sizeof(field), "%s[%lu,%u,%d]", i ? "," : "", (unsigned long)entry.at,
+             (unsigned)entry.event, entry.value);
+    json += field;
+  }
+  json += "]}";
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", json);
+}
 
 void handleTempJSON() {
   uint32_t diagStartUs = micros();
@@ -2592,6 +2670,7 @@ void handleMode() {
     }
 
     if (mode == "preheat" && printerState != "printing" && bedAssistAllowed()) {
+      if (!preheatMode) logVirtualEvent(VirtualEvent::PreheatSelected);
       preheatMode = true;
       preheatReady = false;
       if (!bedAssistActive && !bedAssistPending) {
@@ -2832,6 +2911,7 @@ void setup() {
   server.on("/set", handleSet);
   server.on("/adjust", handleAdjust);
   server.on("/virtualu1", handleVirtualU1);
+  server.on("/virtualu1.json", HTTP_GET, handleVirtualDiagnostics);
   server.on("/faultreset", handleFaultReset);
 
   server.on("/temp.json", handleTempJSON);
@@ -2927,7 +3007,14 @@ void loop() {
   unsigned long currentMillis = millis();
   recordHistorySample(currentMillis);
   HeaterTelemetrySnapshot thermal = {};
-  getHeaterTelemetrySnapshot(thermal);
+  if (getHeaterTelemetrySnapshot(thermal)) {
+    // Observe the GPIO telemetry in loop(), with no added work in the safety task.
+    portENTER_CRITICAL(&virtualU1Mux);
+    if (virtualU1Enabled) {
+      virtualU1Trace.observeLocal(currentMillis, thermal.chamberState == PRE_FAN_WAITING, thermal.relayOn, thermal.fanOn);
+    }
+    portEXIT_CRITICAL(&virtualU1Mux);
+  }
 
   static bool lastMasterOn = thermal.masterOn;
   static HeatingState lastChamberState = thermal.chamberState;
@@ -2975,6 +3062,7 @@ void loop() {
 // Stop only after this ESP32 has actually observed a PRINTING -> terminal-state
 // transition. Standby before a print must not stop a manual chamber preheat.
 if (printEndPending) {
+  logVirtualEvent(printerState == "cancelled" ? VirtualEvent::PrintCancelled : VirtualEvent::PrintEnded);
   Serial.print("!!! PRINT END: ");
   Serial.println(printerState);
 
@@ -2994,6 +3082,7 @@ if (bedAssistActive && preheatMode && printerState != "printing" && !bedAssistRe
   uint32_t generation = 0;
   bedAssistRenewPending = requestU1DesiredState(bedAssistCirculationRequested ? 0.60f : 0.0f, 0.3f, U1_BED_TARGET_100,
                                                  U1_DESIRED_BED_ASSIST_RENEW, generation);
+  if (bedAssistRenewPending) logVirtualEvent(VirtualEvent::RenewalQueued);
 }
 
 updateBedAssistCirculationFan();

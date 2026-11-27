@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -16,6 +17,7 @@ using std::min;
 struct FaultDetails {};
 enum SafetyFaultReason { SAFETY_FAULT_NONE, SAFETY_FAULT_NTC, SAFETY_FAULT_OVERTEMP, SAFETY_FAULT_RUNAWAY, SAFETY_FAULT_SYSTEM };
 #include "chamber-state.inc"
+#include "../firmware/Snapmaker_U1_Chamber/chamber_virtual_u1.h"
 
 enum { LOW = 0, HIGH = 1 };
 bool heaterSafetySystemReady, safetyFaultLatched, otaUpdateRequested, otaSafetyReady;
@@ -31,9 +33,10 @@ using String = std::string;
 struct ServerMock {
   std::map<String, String> args;
   int response = 0;
+  String body;
   String arg(const char *name) { return args.contains(name) ? args.at(name) : ""; }
   void sendHeader(const char*, const char*) {}
-  void send(int status, const char* = "", const char* = "") { response = status; }
+  void send(int status, const char* = "", const String &payload = {}) { response = status; body = payload; }
 } server;
 enum class StorageError { None, Open, Lookup, Read, Write } storageError;
 std::optional<String> savedCredential;
@@ -50,7 +53,8 @@ struct PreferencesMock {
 } preferences;
 bool prepareControllerRestart() { ++restartChecks; return true; }
 void delay(unsigned long) {}
-struct { void disconnect(bool, bool) {} } WiFi;
+const int WL_CONNECTED = 1;
+struct { void disconnect(bool, bool) {} int status() { return WL_CONNECTED; } } WiFi;
 struct { void restart() { ++restarts; } } ESP;
 float constrain(float v, float lo, float hi) { return std::min(hi, std::max(lo, v)); }
 void sendSettingsSaved() {}
@@ -63,18 +67,36 @@ int bedAssistCirculationSync;
 std::atomic<bool> u1FreshPrintingDetected{false};
 U1DesiredState u1DesiredState{};
 bool moonrakerTaskReady = true;
-bool u1BedAssistTargetSet;
+bool u1BedAssistTargetSet, u1BedAssistTargetSimulated;
 void *moonrakerCommandResultQueue = nullptr;
 const int HTTP_CODE_OK = 200;
 const unsigned long moonrakerPollInterval = 5000;
 bool u1CommandLock() { return true; }
 void u1CommandUnlock() {}
-bool virtualU1IsEnabled() { return false; }
 bool enqueueMoonrakerCommand(MoonrakerCommandType, uint32_t) { ++queuedCommands; return true; }
-bool hasU1BedAssistTarget() { return true; }
-int sendU1BedTarget(const U1DesiredState&, int target) { ++u1Writes; lastBedWrite = target; return HTTP_CODE_OK; }
-int sendMoonrakerFanSpeed(const char*, float) { ++u1Writes; return HTTP_CODE_OK; }
-int sendMoonrakerGcode(const char*) { ++u1Writes; return HTTP_CODE_OK; }
+int virtualU1Mux, u1TopCoverMux;
+void portENTER_CRITICAL(int*) {}
+void portEXIT_CRITICAL(int*) {}
+bool virtualU1Enabled, virtualU1TopCoverDetected, u1TopCoverDetectionValid, u1TopCoverDetected;
+MoonPrinterStateCode virtualU1PrinterState;
+VirtualU1Trace virtualU1Trace;
+String printerState, moonrakerGcodeUrl = "test-double";
+bool printWasActive;
+uint32_t lastBedAssistRenew;
+int httpBegins;
+std::function<void()> httpOpened;
+struct HTTPClient {
+  void setConnectTimeout(int) {}
+  void setTimeout(int) {}
+  bool begin(const String&) { ++httpBegins; if (httpOpened) httpOpened(); return true; }
+  void addHeader(const char*, const char*) {}
+  int POST(const String &body) {
+    ++u1Writes;
+    if (body.find("TARGET=0") != String::npos) lastBedWrite = 0;
+    return HTTP_CODE_OK;
+  }
+  void end() {}
+};
 void xQueueOverwrite(void*, const MoonrakerCommandResult*) {}
 struct HeaterTelemetrySnapshot { bool masterOn; HeatingState chamberState; };
 bool getHeaterTelemetrySnapshot(HeaterTelemetrySnapshot &snapshot) {
@@ -86,6 +108,7 @@ enum FreshPrintState { FRESH_PRINT_NOT_RUNNING, FRESH_PRINT_RUNNING };
 FreshPrintState printerState;
 FreshPrintState queryFreshMoonrakerPrintState(MoonrakerSnapshot *bedCheck) {
   if (bedCheck) { bedCheck->bedTargetValid = true; bedCheck->bedTarget = BED_ASSIST_TEMP_C; }
+  if (virtualU1Enabled && virtualU1PrinterState == MOON_PRINT_PRINTING) return FRESH_PRINT_RUNNING;
   return printerState;
 }
 }
@@ -170,6 +193,10 @@ void setupScenario() {
   preheatReadyBeepRequested=false; preheatReadyBeepActive=false;
   queuedCommands=0; u1Writes=0; lastBedWrite=-1; u1DesiredState={};
   u1FreshPrintingDetected=false; u1ReleaseRequestedBySafety=false;
+  virtualU1Enabled=false; virtualU1PrinterState=MOON_PRINT_STANDBY; virtualU1TopCoverDetected=true;
+  u1TopCoverDetectionValid=true; u1TopCoverDetected=true; virtualU1Trace={};
+  printWasActive=false; printerState="standby"; lastBedAssistRenew=0;
+  u1BedAssistTargetSet=false; u1BedAssistTargetSimulated=false; httpBegins=0; httpOpened=nullptr;
   FreshJson::printerState=FreshJson::FRESH_PRINT_NOT_RUNNING;
   server={}; otaPassword.clear(); savedCredential.reset();
   storageError=StorageError::None; clears=0; restarts=0; restartChecks=0;
@@ -216,6 +243,7 @@ void testBedAssist(bool armed, bool printing) {
   preheatReady = armed;
   bedAssistActive = armed;
   bedAssistPending = !armed;
+  u1BedAssistTargetSet = true;
   u1CavityFanOwned = true;
   handleStop();
   handleStop();
@@ -298,6 +326,71 @@ void testOta() {
   require(server.response == 200 && clears == 1 && restartChecks == 1 && restarts == 1 && !savedCredential, "confirmed authenticated reset");
   std::puts("PASS: Factory Reset confirmation and authentication");
 }
+void testVirtualU1() {
+  setupScenario();
+  setVirtualU1State(true, MOON_PRINT_STANDBY, true);
+  require(virtualU1Trace.count == 3 && virtualU1Trace.oldest(0).event == VirtualEvent::Enabled &&
+          virtualU1Trace.oldest(2).event == VirtualEvent::TopCover, "enable records a simulated state and cover");
+  setVirtualU1State(true, MOON_PRINT_STANDBY, true);
+  require(virtualU1Trace.count == 3, "unchanged virtual state is not logged");
+  preheatMode = bedAssistActive = u1CavityFanOwned = u1CirculationFanOwned = true;
+  uint32_t generation;
+  requestU1DesiredState(0.6f, 0.3f, U1_BED_TARGET_100, U1_DESIRED_BED_ASSIST_START, generation);
+  processMoonrakerCommand({MOON_COMMAND_SYNC_U1_DESIRED, generation});
+  require(httpBegins == 0 && u1Writes == 0 && virtualU1Trace.commands == 3, "simulator sends no HTTP");
+  require(virtualU1Trace.bed == 100 && virtualU1Trace.cavity == 30 && virtualU1Trace.topCover == 60, "recorded values match actual command path");
+  require(virtualU1Trace.oldest(7).event == VirtualEvent::BedTarget &&
+          virtualU1Trace.oldest(8).event == VirtualEvent::CommandOk, "command and simulated reply are ordered");
+  requestU1DesiredState(0.6f, 0.3f, U1_BED_TARGET_100, U1_DESIRED_BED_ASSIST_RENEW, generation);
+  processMoonrakerCommand({MOON_COMMAND_SYNC_U1_DESIRED, generation});
+  require(virtualU1Trace.oldest(9).event == VirtualEvent::BedRenewal && virtualU1Trace.commands == 4, "actual renewal recorded");
+  handleVirtualDiagnostics();
+  require(server.body.find("\"targets\":[100,30,60],\"active\":[1,1,1]") != String::npos &&
+          server.body.find("\"renew\":239000") != String::npos, "active indicators and renewal timer");
+  setVirtualU1State(true, MOON_PRINT_PRINTING, true);
+  const auto previous = u1DesiredState;
+  require(sendU1BedTarget(previous, 100) != HTTP_CODE_OK && virtualU1Trace.commands == 4, "printing blocks an admitted simulation write");
+  handoffU1ToPrint();
+  require(virtualU1Trace.oldest(12).event == VirtualEvent::RenewalCancelled &&
+          virtualU1Trace.oldest(13).event == VirtualEvent::PreheatToManual &&
+          virtualU1Trace.oldest(14).event == VirtualEvent::Handoff, "print handoff records actual transitions");
+  handoffU1ToPrint();
+  require(virtualU1Trace.count == 15 && virtualU1Trace.commands == 4, "handoff adds no repeated events or zero commands");
+  handleVirtualDiagnostics();
+  require(server.body.find("\"targets\":[100,30,60],\"active\":[0,0,0]") != String::npos &&
+          server.body.find("\"renew\":-1") != String::npos, "handoff preserves last values and clears active outputs");
+  setVirtualU1State(true, MOON_PRINT_COMPLETE, false);
+  setVirtualU1State(true, MOON_PRINT_CANCELLED, false);
+  require(virtualU1Trace.oldest(15).event == VirtualEvent::Complete &&
+          virtualU1Trace.oldest(16).event == VirtualEvent::TopCover && virtualU1Trace.oldest(16).value == 0 &&
+          virtualU1Trace.oldest(17).event == VirtualEvent::Cancelled, "terminal states and cover loss recorded");
+  u1TopCoverDetected = false;
+  require(sendMoonrakerFanSpeed(previous, "circulation_fan", 0.6f) == HTTP_CODE_OK &&
+          virtualU1Trace.commands == 4, "skipped circulation is not logged as TX");
+  setVirtualU1State(false, MOON_PRINT_STANDBY, true);
+  require(virtualU1Trace.oldest(18).event == VirtualEvent::Disabled &&
+          sendU1BedTarget(previous, 100) != HTTP_CODE_OK && httpBegins == 0, "simulator work cannot fall through to HTTP after exit");
+  U1DesiredState real{};
+  httpOpened = [] { setVirtualU1State(true, MOON_PRINT_STANDBY, true); };
+  require(sendU1BedTarget(real, 100) != HTTP_CODE_OK && u1Writes == 0, "mode switch before POST blocks a real write");
+  require(virtualU1Trace.commands == 0 && virtualU1Trace.bed == -1, "new simulation clears last values and count");
+  std::puts("PASS: simulator commands, source isolation, renewal and print handoff");
+}
+
+void testVirtualLogCapacity() {
+  VirtualU1Trace trace;
+  trace.observeLocal(0, false, false, false);
+  trace.observeLocal(1, false, false, false);
+  trace.observeLocal(2, true, true, true);
+  require(trace.count == 5 && trace.oldest(2).event == VirtualEvent::PreFan &&
+          trace.oldest(3).event == VirtualEvent::Heater && trace.oldest(4).event == VirtualEvent::Fan,
+          "local output observations record edges rather than polling");
+  for (uint32_t i = 100; i < 180; ++i) trace.add(i, VirtualEvent::Standby);
+  require(trace.count == VirtualU1Trace::capacity && trace.oldest(0).at == 132 &&
+          trace.oldest(VirtualU1Trace::capacity - 1).at == 179, "ring retains newest entries in order");
+  std::puts("PASS: bounded 48-event RAM ring and local output transitions");
+}
+
 int main() {
   testPower();
   testBedAssist(true, false);
@@ -305,4 +398,6 @@ int main() {
   testBedAssist(false, true);
   for (int scenario = 0; scenario < 5; ++scenario) testPreFan(scenario);
   testOta();
+  testVirtualU1();
+  testVirtualLogCapacity();
 }

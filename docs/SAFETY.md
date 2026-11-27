@@ -5,7 +5,7 @@ This document describes the firmware safeguards and their limits. The [circuit s
 ## Implemented software behavior
 
 - Boot initializes local heater, fan and buzzer outputs LOW. Normal heating needs an explicit START.
-- In v1.0.1-rc.1, the safety task checks current heat demand again immediately before energizing the relay after PRE-FAN.
+- The safety task checks current heat demand again immediately before energizing the relay after PRE-FAN.
 - A dedicated heater-safety task owns the relay and local fan. Blocking Moonraker requests run in another task. Shared control state uses a mutex.
 - Failure to create the safety task or mutex, or to register its watchdog, blocks heating. The pinned Arduino-ESP32 3.3.12 profile uses a 5 s Task Watchdog with panic enabled. An independent hardware thermal cutoff is required.
 - NTC measurements are sampled at a nominal 750 ms interval. Valid samples require a voltage above 20 mV and below 3280 mV, resistance from 1 kΩ to 1.2 MΩ and a finite temperature from −15 to 120 °C. An invalid reading latches a fault.
@@ -25,6 +25,6 @@ An alarm cancels BED ASSIST and can release controlled fans after confirming tha
 
 ## Network security boundary
 
-Use the controller only on a trusted local network. The panel uses plain HTTP, and ordinary controls remain accessible to local clients. OTA upload uses Basic authentication as `chamber`. In v1.0.1-rc.1, changing an existing OTA password and performing a network factory reset both require the current password when one is configured. [USB recovery procedure](INSTALLATION.md#recovering-a-forgotten-ota-password)
+Use the controller only on a trusted local network. The panel uses plain HTTP, and ordinary controls remain accessible to local clients. OTA upload uses Basic authentication as `chamber`. Changing an existing OTA password and performing a network factory reset both require the current password when one is configured. [USB recovery procedure](INSTALLATION.md#recovering-a-forgotten-ota-password)
 
 The initial AP password `chamberu1` is a shared setup value, not an owner secret. The setup AP is switched off after a successful station connection. NVS contains configured credentials on the physical device; firmware binaries in this repository contain no device NVS backup.

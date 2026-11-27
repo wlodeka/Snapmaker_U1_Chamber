@@ -2,7 +2,7 @@
 
 ## Arduino build
 
-Open the [firmware sketch](../firmware/Snapmaker_U1_Chamber/Snapmaker_U1_Chamber.ino) in Arduino IDE. Keep [chamber_forward_types.h](../firmware/Snapmaker_U1_Chamber/chamber_forward_types.h) and [chamber_web_ui.h](../firmware/Snapmaker_U1_Chamber/chamber_web_ui.h) in the same directory. Arduino combines sketches in this directory, so keep archived versions elsewhere.
+Open the [firmware sketch](../firmware/Snapmaker_U1_Chamber/Snapmaker_U1_Chamber.ino) in Arduino IDE. Keep [chamber_forward_types.h](../firmware/Snapmaker_U1_Chamber/chamber_forward_types.h), [chamber_web_ui.h](../firmware/Snapmaker_U1_Chamber/chamber_web_ui.h) and [chamber_virtual_u1.h](../firmware/Snapmaker_U1_Chamber/chamber_virtual_u1.h) in the same directory. Arduino combines sketches in this directory, so keep archived versions elsewhere.
 
 Build configuration:
 
@@ -32,7 +32,7 @@ U1 must expose the required Moonraker objects and G-code commands on TCP port 71
 ## OTA update
 
 1. Stop heating and plan a supervised update.
-2. Set an update password of at least eight characters in the connection/settings area. In v1.0.1-rc.1, changing an existing password requires the current password.
+2. Set an update password of at least eight characters in the connection/settings area. Changing an existing password requires the current password.
 3. Open **FIRMWARE UPDATE (Wi-Fi)**, or `/update`.
 4. Username: **`chamber`**. Password: the one saved on your controller.
 5. Download `Snapmaker_U1_Chamber.ino.bin` and `SHA256SUMS.txt` from the same [GitHub Release](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases). [Verify the SHA-256](FIRMWARE_RELEASES.md#download-and-verify-the-ota-image) before uploading the application image.

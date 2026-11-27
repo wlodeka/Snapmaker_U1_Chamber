@@ -1,5 +1,11 @@
 # Version provenance
 
+## v1.0.1
+
+The owner validated the firmware and WebGUI on a physical Snapmaker U1 after a Wi-Fi OTA update with the rc.2 application image. The tested image has SHA-256 `233439d71dfb2377aab04aee4825e832333ce1c354347baaa968f630a6355df5`. The [stable release](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.1) uses the same firmware source, with the source commit and checksum for the rebuilt OTA asset recorded in the release attachments.
+
+## v1.0.0
+
 The owner tested and accepted the operating behavior included in stable v1.0.0 on a physical Snapmaker U1 and its ESP32-S3-Zero controller. The tested version adds 60% TopCover circulation during MANUAL heating, hands off to U1 at PRINTING without writing new targets and checks the current bed target before manual shutdown.
 
 ## Packaging verification for v1.0.0

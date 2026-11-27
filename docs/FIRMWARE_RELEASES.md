@@ -18,7 +18,9 @@ Upload the verified image using the controller's Wi-Fi OTA page. For first insta
 
 ## Release channels
 
-[v1.0.0](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.0) remains the latest stable release. [v1.0.1-rc.1](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.1-rc.1) is a pre-release intended for supervised testing. Extended physical testing is pending. [Changelog](../CHANGELOG.md)
+[v1.0.1](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.1) is the current stable release. The owner tested its firmware source on a physical Snapmaker U1 using the rc.2 OTA image. The release workflow builds the same firmware source and records the shipped image checksum in `SHA256SUMS.txt` and its source commit in `BUILD_INFO.txt`. [Version provenance](PROVENANCE.md#v101) · [Changelog](../CHANGELOG.md)
+
+[v1.0.0](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.0) and [v1.0.1-rc.1](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.1-rc.1) remain available for reference.
 
 ## First stable release
 
@@ -30,7 +32,7 @@ The original build used 1,171,449 of 1,966,080 bytes of program flash and 65,776
 
 The [first Actions control build](https://github.com/wlodeka/Snapmaker_U1_Chamber/actions/runs/45577870503) produced a 1,171,424-byte image with the same ESP32-S3 image header and ESP-IDF v5.5.5 as the accepted binary. The runner's shorter diagnostic paths change the read-only data layout and the addresses referring to it. The compile timestamp, ELF digest and resulting image checksums also differ. Both images pass their internal integrity checks.
 
-The control run used 1,171,273 of 1,966,080 bytes of program flash and 65,776 of 327,680 bytes for global variables. The stable asset remains the previously accepted image identified above.
+The control run used 1,171,273 of 1,966,080 bytes of program flash and 65,776 of 327,680 bytes for global variables. The v1.0.0 asset is the previously accepted image identified above.
 
 
 ## Build and publishing workflow

@@ -8,16 +8,20 @@ This project combines an ESP32-S3-Zero local thermostat with the U1's built-in f
 
 **[Recommended Chamber Thermal Insulation](docs/THERMAL_INSULATION.md)**. See the optional door seal and Z-axis cover setup, with safety recommendations and prototype photos.
 
+**[Virtual U1](#virtual-u1--advanced-printer-integration-simulator)** exercises Chamber’s Snapmaker U1 integration in detail without a physical connection to the printer.
+
 ## Getting Started
 
 1. Review the [safety requirements](docs/SAFETY.md), [BOM](BOM/README.md) and [circuit schematic](docs/schematics/README.md).
 2. Use [first installation over USB](docs/INSTALLATION.md#first-usb-installation) to program the ESP32-S3 and its partition table.
 3. Use [Wi-Fi OTA](docs/INSTALLATION.md#ota-update) for later application updates on a controller with the matching partition table.
 
-[v1.0.0 is the latest stable release](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.0). [v1.0.1-rc.1 is a test release awaiting extended physical testing](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.1-rc.1). [Changelog](CHANGELOG.md)
+**[Download stable firmware v1.0.1](https://github.com/wlodeka/Snapmaker_U1_Chamber/releases/tag/v1.0.1)**. The owner verified its features and WebGUI on a physical Snapmaker U1 after a Wi-Fi OTA update. [Changelog](CHANGELOG.md)
 
 ![Installed chamber heater assembly](docs/photos/c4.jpg)
 ![Chamber WebGUI overview](docs/screenshots/web_gui_1.png)
+
+[See HEATER and FAN active in the Chamber overview](docs/screenshots/web_gui_1_aktiv_fan_heater.png).
 
 ## Key features
 
@@ -25,7 +29,8 @@ This project combines an ESP32-S3-Zero local thermostat with the U1's built-in f
 - MANUAL and PREHEAT modes with automatic BED ASSIST.
 - Automatic TopCover detection and coordinated U1 fan control.
 - Automatic handover to the printer when printing starts, and local heating shutdown when an observed print completes or is cancelled.
-- Responsive, CDN-independent web interface, diagnostics, charts, Virtual U1 and OTA updates.
+- Virtual U1 integration simulator with live command indicators, a TX/RX event log and a BED ASSIST renewal countdown.
+- Responsive, CDN-independent web interface, diagnostics, charts and OTA updates.
 
 ## Operating modes
 
@@ -81,11 +86,23 @@ The controller uses a single NTC and does not measure fan RPM, airflow, heater c
 
 A local fault, communication loss, restart or power loss does not guarantee U1 bed shutdown. A fault cancels assistance and attempts to release controlled fans, but does not send a zero bed target. HTTP state checks and writes are separate requests; a command already sent cannot be recalled. U1 provides no bed-target ownership identifier, so an identical 100°C target from another source cannot be distinguished. Loss of TopCover detection may leave previous fan settings active.
 
-## Web interface and Virtual U1
+## Web interface
 
 The dashboard displays local temperature, target, U1 cavity and bed temperatures, heater and fan activity, connection status and faults. Presets: PETG 50°C, ABS/ASA 55°C and PC/Nylon 60°C (not universal material recommendations). A 720-sample RAM buffer at approximately 5 s intervals provides about one hour of history, with 15/30/60-minute views. Temperature and local output activity charts, advanced settings and last-fault diagnostics are included.
 
-Virtual U1 simulates idle with or without TopCover, printing, completion and cancellation. Switching between the real and virtual printer clears pending commands and ownership flags. The local heater, fan, NTC and buzzer continue to operate physically during simulation.
+The **HEATER** and **FAN** tiles show the ESP32 control outputs. The dashboard reports no independent physical feedback for either load.
+
+## Virtual U1 – Advanced Printer Integration Simulator
+
+Virtual U1 exercises the Chamber integration in detail without a physical connection to a Snapmaker U1. Its scope covers the printer states, TopCover detection and command responses that Chamber uses.
+
+<img src="docs/screenshots/virtual_u1.png" width="760" alt="Virtual U1 panel with command indicators, print-state controls and the Simulation Event Log">
+
+- Select Standby with or without TopCover, Printing, Complete or Cancelled. Use the simulator for first setup, troubleshooting and firmware testing without sending G-code to the real printer.
+- The BED ASSIST, CAVITY FAN and TOPCOVER FAN indicators show the last simulated target or speed. A lit LED marks active Chamber control. Starting a simulated print hands control to the print and turns the LEDs off while retaining the last commands for reference.
+- The event log separates TX commands, RX SIM replies and controller events. It records BED ASSIST renewal and cancellation. The command counter and countdown help verify the 240-second renewal cycle and handoff.
+
+**The local heater, fan, NTC and buzzer remain active during simulation.** Use a supervised setup with the required electrical and thermal safeguards. Switching between simulated and real U1 discards pending commands and ownership. A real request already in flight can finish. [Simulator operation](docs/OPERATION.md#virtual-u1-diagnostics)
 
 ## Configuration and updates
 

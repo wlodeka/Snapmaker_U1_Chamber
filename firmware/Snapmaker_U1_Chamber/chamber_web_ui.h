@@ -173,6 +173,23 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
     .setup-notice { margin-top: .65rem; border: 1px solid #66543c; border-radius: 7px; background: #2d271f; padding: .56rem .68rem; color: var(--warm); font-size: .85rem; }
     .connection summary { display: list-item; cursor: pointer; font-weight: 650; }
     .connection .subtext { margin-top: .36rem; }
+    #heater-output[data-on="1"] { background: #432d23; border-color: #c87c43; color: #ffbd85; }
+    #fan-output[data-on="1"] { background: #193e3b; border-color: #449e89; color: #8ce5ce; }
+    #heater-output[data-on="1"] > *, #fan-output[data-on="1"] > * { color: inherit; }
+    .virtual-indicators { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .45rem; margin-top: .85rem; }
+    .virtual-indicator { display: grid; justify-items: center; gap: .18rem; min-width: 0; text-align: center; color: var(--muted); }
+    .virtual-indicator strong { font-size: .7rem; line-height: 1.25; overflow-wrap: anywhere; }
+    .virtual-indicator output { color: var(--text); font-variant-numeric: tabular-nums; }
+    .virtual-indicator small { font-size: .67rem; }
+    .virtual-led { width: 1.14rem; height: 1.14rem; border-radius: 50%; background: #17232e; border: 1px solid #4b5b6a; }
+    #sim-bed { --led: #e27178; --led-glow: #e2717844; }
+    #sim-cavity { --led: #6eade4; --led-glow: #6eade444; }
+    #sim-topcover { --led: #75bb83; --led-glow: #75bb8344; }
+    .virtual-indicator[data-active="1"] .virtual-led { background: var(--led); border-color: var(--led); box-shadow: 0 0 .46rem var(--led-glow); }
+    .virtual-log-title { margin-top: .85rem; font-size: .84rem; }
+    .virtual-log { margin: .36rem 0 0; max-height: 9rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+      padding: .48rem .55rem; border-radius: 7px; background: #0b141e; border: 1px solid var(--line); color: #c3d6e1;
+      font: .72rem/1.5 ui-monospace, Consolas, monospace; }
     .virtual-controls { display: flex; flex-wrap: wrap; gap: .48rem; margin-top: .85rem; }
     .virtual-controls .button[aria-pressed="true"] { color: var(--accent); background: #1c3841; border-color: #4c777d; }
     .restart-actions { border-top: 1px solid var(--line); margin-top: .9rem; padding-top: .9rem; }
@@ -293,8 +310,8 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
                 <div class="progress-fill" id="progress-fill" style="width:0"></div>
               </div>
               <div class="io-grid">
-                <div class="io-cell"><span>Heater</span><strong id="heater-state">—</strong></div>
-                <div class="io-cell"><span>Fan</span><strong id="fan-state">—</strong></div>
+                <div class="io-cell" id="heater-output" title="Reported ESP32 heater control output"><span>Heater</span><strong id="heater-state">—</strong></div>
+                <div class="io-cell" id="fan-output" title="Reported ESP32 fan control output"><span>Fan</span><strong id="fan-state">—</strong></div>
               </div>
               <button class="button primary power" id="power" type="button" data-running="false" disabled><span class="power-icon" aria-hidden="true"></span><span id="power-label">—</span></button>
               <p class="state-description" id="state-description">—</p>
@@ -413,6 +430,11 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
               <div><h2 id="virtual-title" tabindex="-1">Virtual U1</h2><p class="subtext">Test TopCover detection and print handoff.</p></div>
               <span class="pill" id="virtual-status">Off</span>
             </header>
+            <div class="virtual-indicators" aria-label="Last simulated commands">
+              <div class="virtual-indicator" id="sim-bed"><span class="virtual-led" aria-hidden="true"></span><strong>BED ASSIST</strong><output id="sim-bed-value">—</output><small id="sim-bed-activity">Inactive</small></div>
+              <div class="virtual-indicator" id="sim-cavity"><span class="virtual-led" aria-hidden="true"></span><strong>CAVITY FAN</strong><output id="sim-cavity-value">—</output><small id="sim-cavity-activity">Inactive</small></div>
+              <div class="virtual-indicator" id="sim-topcover"><span class="virtual-led" aria-hidden="true"></span><strong>TOPCOVER FAN</strong><output id="sim-topcover-value">—</output><small id="sim-topcover-activity">Inactive</small></div>
+            </div>
             <div class="virtual-controls" id="virtual-enable">
               <button class="button" type="button" id="virtual-on">Enable Virtual U1</button>
             </div>
@@ -425,6 +447,9 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
               <button class="button danger" type="button" id="virtual-off">Exit Virtual U1</button>
             </div>
             <p class="config-info" id="virtual-print" hidden></p>
+            <h3 class="virtual-log-title" id="virtual-log-title">Simulation Event Log</h3>
+            <p class="subtext" id="virtual-log-status">Waiting for diagnostics</p>
+            <pre class="virtual-log" id="virtual-log" role="region" aria-labelledby="virtual-log-title" tabindex="0">No simulation events yet.</pre>
             <div class="form-actions restart-actions">
               <button class="button" type="button" id="restart">Restart controller</button>
               <button class="button danger" type="button" id="factory-reset">Factory reset</button>
@@ -527,6 +552,14 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
       return 'Target ' + degrees(field('Target')) + ' · Uptime ' + Math.round(field('AtMs') / 1000) + ' s';
     }
 
+    function renderOutputs(data) {
+      for (const [key, tone] of [["heater", "warm"], ["fan", "ok"]]) {
+        const on = Boolean(data[key]);
+        byId(key + "-output").dataset.on = on ? "1" : "0";
+        setTone(key + "-state", on ? "ON" : "OFF", on ? tone : "muted");
+      }
+    }
+
     function renderStatus() {
       setText('live-status', awaitRestart ? 'Controller restarting' : telemetryFresh ? 'Live data' :
         telemetry ? 'Telemetry unavailable' : 'Waiting for controller');
@@ -553,8 +586,7 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
       setText('progress-value', progress + '%');
       byId('chamber-progress').setAttribute('aria-valuenow', progress);
       byId('progress-fill').style.width = progress + '%';
-      setTone('heater-state', data.heater ? 'ON' : 'OFF', data.heater ? 'warm' : 'muted');
-      setTone('fan-state', data.fan ? 'ON' : 'OFF', data.fan ? 'ok' : 'muted');
+      renderOutputs(data);
       byId('power').dataset.running = String(Boolean(data.master));
       setText('power-label', data.master ? 'STOP' : 'START');
       byId('manual').setAttribute('aria-pressed', String(!data.preheatMode));
@@ -709,6 +741,73 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
       if (window.drawChamberCharts) window.drawChamberCharts();
     }
 
+    let virtualLogRevision;
+
+    function virtualLogTime(ms) {
+      const seconds = Math.floor(ms / 1000);
+      const two = value => String(value).padStart(2, "0");
+      return "+" + two(Math.floor(seconds / 3600)) + ":" + two(Math.floor(seconds / 60) % 60) + ":" + two(seconds % 60);
+    }
+
+    // Wire order matches VirtualEvent in chamber_virtual_u1.h.
+    const virtualLogLabels = [
+      "SYSTEM · Virtual U1 enabled", "SYSTEM · Virtual U1 disabled",
+      "RX SIM · STANDBY", "RX SIM · PRINTING", "RX SIM · COMPLETE", "RX SIM · CANCELLED",
+      value => "RX SIM · TopCover " + (value ? "connected" : "not detected"),
+      value => "TX · BED TARGET " + value + " °C",
+      value => "TX · BED TARGET " + value + " °C (renewal)",
+      value => "TX · CAVITY FAN " + value + "%",
+      value => "TX · TOPCOVER FAN " + value + "%",
+      "RX SIM · OK", "SYSTEM · BED ASSIST renewal queued", "SYSTEM · BED ASSIST renewal cancelled",
+      "SYSTEM · U1 control transferred to print", "SYSTEM · PREHEAT → MANUAL", "SYSTEM · PREHEAT selected",
+      "SYSTEM · PRE-FAN started", value => "SYSTEM · Local HEATER output " + (value ? "ON" : "OFF"),
+      value => "SYSTEM · Local FAN output " + (value ? "ON" : "OFF"),
+      "SYSTEM · Print ended", "SYSTEM · Print cancelled"
+    ];
+
+    function renderVirtualDiagnostics(data) {
+      const outputs = ["bed", "cavity", "topcover"];
+      for (const [index, name] of outputs.entries()) {
+        const value = data?.targets[index];
+        const active = Boolean(data?.active[index]);
+        byId("sim-" + name).dataset.active = active ? "1" : "0";
+        if (data) setText("sim-" + name + "-value", value >= 0 ? value + (index === 0 ? " °C" : "%") : "—");
+        setText("sim-" + name + "-activity", active ? "Chamber active" : "Inactive");
+      }
+      if (!data) {
+        setText("virtual-log-status", "Diagnostics unavailable");
+        return;
+      }
+      const renewal = data.renew < 0 ? "Renewal inactive" : data.pending ? "Renewal queued" :
+        "Next renewal in " + Math.ceil(data.renew / 1000) + " s";
+      setText("virtual-log-status", "Simulated commands: " + data.commands + " · " + renewal);
+      if (virtualLogRevision === data.revision) return;
+      virtualLogRevision = data.revision;
+      const log = byId("virtual-log");
+      const follow = log.scrollHeight - log.clientHeight - log.scrollTop <= 4;
+      const lines = data.events.map(([at, kind, value]) => {
+        const label = virtualLogLabels[kind];
+        return virtualLogTime(at) + " " + (typeof label === "function" ? label(value) : label);
+      });
+      log.textContent = lines.join("\n") || "No simulation events yet.";
+      if (follow) log.scrollTop = log.scrollHeight;
+    }
+
+    async function loadVirtualDiagnostics(generation) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1500);
+      try {
+        const response = await fetch("/virtualu1.json", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("Diagnostics request failed.");
+        const data = await response.json();
+        if (generation === actionGeneration) renderVirtualDiagnostics(data);
+      } catch {
+        if (generation === actionGeneration) renderVirtualDiagnostics(null);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
     async function poll() {
       if (pollActive || actionActive) return;
       pollActive = true;
@@ -733,6 +832,9 @@ static const char CHAMBER_PAGE_BODY[] PROGMEM = R"chamberUI(  <style>
           // The dedicated telemetry and history routes remain usable.
         }
         if (generation === actionGeneration) await loadHistory(generation).catch(() => {});
+        if (generation === actionGeneration && !awaitRestart && !byId("configuration").hidden) {
+          await loadVirtualDiagnostics(generation);
+        }
       } finally {
         pollActive = false;
       }
